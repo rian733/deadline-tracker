@@ -162,15 +162,50 @@ export function buildTestTasks(nowStr) {
   ];
 }
 
+// ---------- Reminders ----------
+// Reminder times are Central wall-clock "HH:mm". Step 4 makes them changeable.
+export const DEFAULT_REMINDER_TIMES = ["07:00", "19:00"];
+
+// The most recent reminder time at or before `nowStr`, as "YYYY-MM-DDTHH:mm".
+export function latestReminderSlot(nowStr, times) {
+  const today = datePart(nowStr);
+  let latest = null;
+  for (const day of [addDays(today, -1), today]) {
+    for (const time of times) {
+      const slot = `${day}T${time}`;
+      if (slot <= nowStr && (!latest || slot > latest)) latest = slot;
+    }
+  }
+  return latest;
+}
+
+// "2 missing, 3 due soon", or null when nothing is yellow or red.
+export function reminderMessage(tasks, nowStr) {
+  let missing = 0;
+  let soon = 0;
+  for (const task of visibleTasks(tasks, nowStr)) {
+    const { state } = taskStatus(task, nowStr);
+    if (state === "red") missing++;
+    else if (state === "yellow") soon++;
+  }
+  const parts = [];
+  if (missing) parts.push(`${missing} missing`);
+  if (soon) parts.push(`${soon} due soon`);
+  return parts.length ? parts.join(", ") : null;
+}
+
 // ---------- Storage (chrome.storage.local) ----------
-// Keys: tasks (array), devPretend ({ central, setAtMs } or null).
+// Keys: tasks (array), devPretend ({ central, setAtMs } or null),
+// reminderTimes (array of "HH:mm"), lastReminderSlot (last reminder time handled).
 
 export async function loadState() {
-  const { tasks = [], devPretend = null } = await chrome.storage.local.get([
-    "tasks",
-    "devPretend",
-  ]);
-  return { tasks, devPretend };
+  const {
+    tasks = [],
+    devPretend = null,
+    reminderTimes = DEFAULT_REMINDER_TIMES,
+    lastReminderSlot = null,
+  } = await chrome.storage.local.get(["tasks", "devPretend", "reminderTimes", "lastReminderSlot"]);
+  return { tasks, devPretend, reminderTimes, lastReminderSlot };
 }
 
 export async function saveTasks(tasks) {

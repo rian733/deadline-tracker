@@ -46,6 +46,19 @@ document.getElementById("test-fill").addEventListener("click", async () => {
   say(`Added ${fresh.length} test tasks.`);
 });
 
+document.getElementById("test-reminder").addEventListener("click", async () => {
+  let result;
+  try {
+    result = await chrome.runtime.sendMessage({ type: "send-test-reminder" });
+  } catch (err) {
+    say(`Couldn't reach the background script: ${err.message}. Close this page and reopen Options.`);
+    return;
+  }
+  if (result?.error) say(`Reminder failed: ${result.error}`);
+  else if (result?.message) say(`Reminder sent: "${result.message}".`);
+  else say("Nothing is yellow or red, so no reminder was sent.");
+});
+
 document.getElementById("reset").addEventListener("click", async () => {
   if (!confirm("Clear all tasks and settings? This can't be undone.")) return;
   await chrome.storage.local.clear();
