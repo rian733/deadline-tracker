@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deadline Tracker settings</title>
+    <link rel="stylesheet" href="panel.css" />
+    <style>
+      body {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+      main {
+        padding: 24px 16px 48px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+      }
+      details {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+        padding: 12px 14px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 650;
+      }
+      .tool {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .tool h2 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .row input {
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+      }
+      .btn.danger {
+        color: var(--red);
+        border-color: var(--red);
+      }
+      #message {
+        min-height: 1.2em;
+        font-weight: 600;
+        color: var(--green);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Settings</h1>
+      <p class="hint">
+        Display, theme, scale, and reminder times arrive in step 4. For now this page holds
+        only the developer tools.
+      </p>
+
+      <details>
+        <summary>Developer tools</summary>
+
+        <div class="tool">
+          <h2>Pretend date and time</h2>
+          <p class="hint">
+            The extension acts as if it is this Central time, and the clock keeps ticking
+            forward from there.
+          </p>
+          <div class="row">
+            <input id="pretend-date" type="date" />
+            <input id="pretend-time" type="time" />
+            <button id="pretend-set" class="btn">Set</button>
+            <button id="pretend-clear" class="btn">Use real time</button>
+          </div>
+          <div id="pretend-status" class="hint"></div>
+        </div>
+
+        <div class="tool">
+          <h2>Test tasks</h2>
+          <p class="hint">
+            Adds fake tasks in every state: green, yellow, due today, red, and turned in.
+            Replaces any earlier test tasks and leaves your real tasks alone.
+          </p>
+          <div class="row">
+            <button id="test-fill" class="btn">Fill with test tasks</button>
+          </div>
+        </div>
+
+        <div class="tool">
+          <h2>Reset</h2>
+          <p class="hint">Clears all tasks and settings.</p>
+          <div class="row">
+            <button id="reset" class="btn danger">Reset everything</button>
+          </div>
+        </div>
+      </details>
+
+      <div id="message" role="status"></div>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

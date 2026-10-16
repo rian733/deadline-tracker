@@ -1,0 +1,314 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1c2330;
+  --muted: #5d6676;
+  --line: #d9dde4;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --green: #15803d;
+  --green-bg: #f0fdf4;
+  --yellow: #a16207;
+  --yellow-bg: #fefce8;
+  --red: #b91c1c;
+  --red-bg: #fef2f2;
+  --gray: #6b7280;
+  --gray-bg: #f3f4f6;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Header ---------- */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.header h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--gray-bg);
+}
+
+.icon-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.icon-btn.primary:hover {
+  filter: brightness(1.08);
+}
+
+.icon-btn.danger {
+  color: var(--red);
+}
+
+.icon-btn:focus-visible,
+.btn:focus-visible,
+.task:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- List ---------- */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.task {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.task:hover {
+  filter: brightness(0.98);
+}
+
+.task-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.task-meta {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.state-green {
+  border-color: var(--green);
+}
+.state-green .badge {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.state-yellow {
+  border-color: var(--yellow);
+}
+.state-yellow .badge {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+}
+
+.state-red {
+  border-color: var(--red);
+}
+.state-red .badge {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.state-gray {
+  border-color: var(--gray);
+  background: var(--gray-bg);
+}
+.state-gray .badge {
+  background: var(--surface);
+  color: var(--gray);
+}
+.state-gray .task-title,
+.state-gray .task-meta {
+  color: var(--gray);
+  text-decoration: line-through;
+}
+
+.empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ---------- Forms (add page, task page) ---------- */
+.page {
+  padding: 16px 14px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.field input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.error {
+  color: var(--red);
+  font-size: 13px;
+  min-height: 1em;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn {
+  padding: 9px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.btn:hover {
+  filter: brightness(0.97);
+}
+
+/* ---------- Task page ---------- */
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.status-line .badge {
+  margin-left: auto;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.check-row input {
+  width: 20px;
+  height: 20px;
+}
+
+.classroom-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.classroom-link:hover {
+  text-decoration: underline;
+}
+
+.classroom-link img {
+  height: 24px;
+  width: auto;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+}
