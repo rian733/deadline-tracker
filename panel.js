@@ -5,6 +5,7 @@ import {
   loadVisible,
   loadState,
   saveTasks,
+  deleteTask,
   nowCentral,
   taskStatus,
   sortTasks,
@@ -103,7 +104,8 @@ function renderList(tasks, nowStr) {
             h("div", { class: "task-title" }, task.title),
             h("span", { class: "badge" }, status.label)
           ),
-          h("div", { class: "task-meta" }, `${task.className} · ${formatDate(task.due)}`)
+          h("div", { class: "task-meta" }, `${task.className} · ${formatDate(task.due)}`),
+          task.notOnClassroom ? h("div", { class: "task-note" }, "Not on Classroom") : null
         );
       })
     )
@@ -219,8 +221,7 @@ function renderTask(task, tasks, nowStr) {
       "aria-label": "Delete this task",
       onclick: async () => {
         if (!confirm(`Delete "${task.title}"? This can't be undone.`)) return;
-        const { tasks: current } = await loadState();
-        await saveTasks(current.filter((t) => t.id !== task.id));
+        await deleteTask(task.id);
         go({ name: "list" });
       },
     },
@@ -302,7 +303,7 @@ function renderTask(task, tasks, nowStr) {
       update((t, now) => {
         t.done = done;
         t.turnedInSeenAt = done ? now : null;
-      });
+      }, "done");
     },
   });
 
@@ -324,6 +325,13 @@ function renderTask(task, tasks, nowStr) {
       "div",
       { class: "page" },
       statusLine,
+      task.notOnClassroom
+        ? h(
+            "div",
+            { class: "task-note" },
+            "This assignment is no longer on Classroom. Delete it if it's gone for good."
+          )
+        : null,
       field("t-title", "Title", title),
       field("t-class", "Class", cls),
       h(

@@ -194,9 +194,147 @@ export function reminderMessage(tasks, nowStr) {
   return parts.length ? parts.join(", ") : null;
 }
 
+// ---------- Classroom date text (step 3) ----------
+// Classroom writes dates for people, not computers:
+//   To-do list rows:   "Today, 11:59 PM", "Monday, Oct 19", "Friday, Oct 2"
+//   Assignment pages:  "Due 11:59 PM" (today), "Due Yesterday, 2:55 AM", "Due Oct 13, 9:10 AM"
+// There's no year, so we pick the year that puts the date closest to today.
+// AM/PM may follow a narrow no-break space (U+202F), which is treated as a plain space.
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+function clean(text) {
+  return text.replace(/[  ]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+// "2:55 PM" -> "14:55", or null if it isn't a time.
+function parseClock(text) {
+  const m = /^(\d{1,2}):(\d{2}) ?([AP]M)$/i.exec(text);
+  if (!m) return null;
+  let h = Number(m[1]) % 12;
+  if (m[3].toUpperCase() === "PM") h += 12;
+  return `${pad(h)}:${m[2]}`;
+}
+
+// A date word or "Oct 19" / "Oct 19, 2027" -> "YYYY-MM-DD", or null.
+function parseDay(text, nowStr) {
+  const today = datePart(nowStr);
+  const word = text.toLowerCase();
+  if (word === "today") return today;
+  if (word === "tomorrow") return addDays(today, 1);
+  if (word === "yesterday") return addDays(today, -1);
+  const m = /^([A-Za-z]{3})[a-z]* (\d{1,2})(?:, (\d{4}))?$/.exec(text);
+  if (!m) return null;
+  const month = MONTHS.indexOf(m[1].toLowerCase());
+  if (month < 0) return null;
+  const md = `${pad(month + 1)}-${pad(Number(m[2]))}`;
+  if (m[3]) return `${m[3]}-${md}`;
+  const year = Number(today.slice(0, 4));
+  const options = [year - 1, year, year + 1].map((y) => `${y}-${md}`);
+  return options.reduce((best, d) =>
+    Math.abs(calendarDaysBetween(today, d)) < Math.abs(calendarDaysBetween(today, best)) ? d : best
+  );
+}
+
+// A To-do list row's date -> { date: "YYYY-MM-DD", time: "HH:mm" or null }, or null.
+export function parseListDate(text, nowStr) {
+  const parts = clean(text).split(", ");
+  // Drop a leading weekday ("Monday, Oct 19"); keep "Today", "Tomorrow", "Yesterday".
+  if (parts.length > 1 && /^(mon|tues|wednes|thurs|fri|satur|sun)day$/i.test(parts[0])) parts.shift();
+  const time = parts.length > 1 ? parseClock(parts[parts.length - 1]) : null;
+  if (time) parts.pop();
+  const date = parseDay(parts.join(", "), nowStr);
+  return date ? { date, time } : null;
+}
+
+// An assignment page's "Due ..." line -> "YYYY-MM-DDTHH:mm", or null.
+// A due date with no time shown means the end of that day.
+export function parseDueLine(text, nowStr) {
+  const t = clean(text).replace(/^Due /i, "");
+  const onlyTime = parseClock(t);
+  if (onlyTime) return `${datePart(nowStr)}T${onlyTime}`;
+  const parts = t.split(", ");
+  const time = parts.length > 1 ? parseClock(parts[parts.length - 1]) : null;
+  if (time) parts.pop();
+  const date = parseDay(parts.join(", "), nowStr);
+  return date ? `${date}T${time || "23:59"}` : null;
+}
+
+// ---------- Classroom merge (step 3) ----------
+// The reader returns one entry per assignment it found:
+//   { classroomId, title, className, due ("YYYY-MM-DDTHH:mm" Central, or null), url, turnedIn }
+// mergeClassroom folds those into the task list and returns the new list.
+// - New assignments are added, unless already turned in (so a turn-in removed after
+//   24 hours isn't added back by the next read of Classroom's "Done" list).
+// - Fields you edited (listed in `edited`) are never overwritten.
+// - A turn-in checks the task off and starts the 24-hour clock; an unsubmit undoes it.
+//   A check-off you made yourself ("done" in `edited`) is left as you set it.
+// - Tasks you deleted (their ids are in `deletedIds`) are never added back.
+// - Missing work due more than MISSING_LOOKBACK_DAYS ago isn't added (old backlog).
+//   A task already in the list stays until turned in, however old it gets.
+// - After a full read (`fullRead`), Classroom tasks the reader didn't see are marked
+//   `notOnClassroom` so you can decide what to do; seeing them again clears the mark.
+//   After a partial read, unseen tasks are left alone.
+export const CLASSROOM_FIELDS = ["title", "className", "due", "url"];
+export const MISSING_LOOKBACK_DAYS = 14;
+
+export function mergeClassroom(tasks, found, nowStr, { deletedIds = [], fullRead = false } = {}) {
+  const out = tasks.map((t) => ({ ...t, edited: [...(t.edited || [])] }));
+  const byId = new Map(out.map((t) => [t.id, t]));
+  const deleted = new Set(deletedIds);
+  const seen = new Set();
+  const oldest = msToStr(strToMs(nowStr) - MISSING_LOOKBACK_DAYS * DAY_MS);
+  for (const a of found) {
+    const id = `classroom-${a.classroomId}`;
+    seen.add(id);
+    const task = byId.get(id);
+    if (!task) {
+      if (deleted.has(id) || a.turnedIn || !a.due || a.due < oldest) continue;
+      const fresh = {
+        id,
+        title: a.title,
+        className: a.className,
+        due: a.due,
+        url: a.url || "",
+        source: "classroom",
+        done: false,
+        turnedInSeenAt: null,
+        notOnClassroom: false,
+        edited: [],
+      };
+      out.push(fresh);
+      byId.set(id, fresh);
+      continue;
+    }
+    for (const field of CLASSROOM_FIELDS) {
+      if (task.edited.includes(field)) continue;
+      if (a[field] != null && a[field] !== "") task[field] = a[field];
+    }
+    task.notOnClassroom = false;
+    if (task.edited.includes("done")) continue;
+    if (a.turnedIn && !task.done) {
+      task.done = true;
+      task.turnedInSeenAt = nowStr;
+    } else if (!a.turnedIn && task.done) {
+      task.done = false;
+      task.turnedInSeenAt = null;
+    }
+  }
+  if (fullRead) {
+    for (const t of out) {
+      if (t.source === "classroom" && !seen.has(t.id)) t.notOnClassroom = true;
+    }
+  }
+  return out;
+}
+
 // ---------- Storage (chrome.storage.local) ----------
 // Keys: tasks (array), devPretend ({ central, setAtMs } or null),
-// reminderTimes (array of "HH:mm"), lastReminderSlot (last reminder time handled).
+// reminderTimes (array of "HH:mm"), lastReminderSlot (last reminder time handled),
+// deletedIds (ids of Classroom tasks you deleted, so a refresh doesn't add them back).
 
 export async function loadState() {
   const {
@@ -204,8 +342,26 @@ export async function loadState() {
     devPretend = null,
     reminderTimes = DEFAULT_REMINDER_TIMES,
     lastReminderSlot = null,
-  } = await chrome.storage.local.get(["tasks", "devPretend", "reminderTimes", "lastReminderSlot"]);
-  return { tasks, devPretend, reminderTimes, lastReminderSlot };
+    deletedIds = [],
+  } = await chrome.storage.local.get([
+    "tasks",
+    "devPretend",
+    "reminderTimes",
+    "lastReminderSlot",
+    "deletedIds",
+  ]);
+  return { tasks, devPretend, reminderTimes, lastReminderSlot, deletedIds };
+}
+
+// Deletes a task. A Classroom task's id is remembered so a refresh doesn't add it back.
+export async function deleteTask(id) {
+  const { tasks, deletedIds } = await loadState();
+  const removed = tasks.find((t) => t.id === id);
+  const update = { tasks: tasks.filter((t) => t.id !== id) };
+  if (removed?.source === "classroom" && !deletedIds.includes(id)) {
+    update.deletedIds = [...deletedIds, id];
+  }
+  await chrome.storage.local.set(update);
 }
 
 export async function saveTasks(tasks) {
@@ -213,10 +369,20 @@ export async function saveTasks(tasks) {
 }
 
 // Loads tasks, drops expired done tasks (saving the cleanup), and returns what to show.
+// A Classroom task you checked off yourself may still be on Classroom's To-do list, so its
+// id goes in `deletedIds`; otherwise the next refresh would add it back unchecked.
 export async function loadVisible() {
-  const { tasks, devPretend } = await loadState();
+  const { tasks, devPretend, deletedIds } = await loadState();
   const nowStr = nowCentral(devPretend);
   const kept = tasks.filter((t) => !isExpiredDone(t, nowStr));
-  if (kept.length !== tasks.length) await saveTasks(kept);
+  if (kept.length !== tasks.length) {
+    const update = { tasks: kept };
+    const remember = tasks
+      .filter((t) => isExpiredDone(t, nowStr) && t.source === "classroom" && t.edited?.includes("done"))
+      .map((t) => t.id)
+      .filter((id) => !deletedIds.includes(id));
+    if (remember.length) update.deletedIds = [...deletedIds, ...remember];
+    await chrome.storage.local.set(update);
+  }
   return { tasks: kept, nowStr };
 }
