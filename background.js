@@ -1,17 +1,49 @@
 // Background script (service worker).
-// Makes the toolbar icon open the side panel, and sends the reminders (step 2).
-// Classroom refresh (step 3) will be added here.
+// Opens the list the way the Display setting says, sends the reminders (step 2),
+// and runs the Classroom refresh (step 3): before each reminder, when you open
+// Classroom, and when you press the refresh button.
 
 import { loadState, nowCentral, latestReminderSlot, reminderMessage } from "./lib.js";
+import { refreshClassroom, isRefreshTab, isRefreshing, clearStaleRefresh } from "./refresh.js";
 
 const CHECK_ALARM = "reminder-check";
 const NOTIFICATION_ID = "reminder";
+// Opening Classroom yourself refreshes at most this often (Rian's choice, Oct 16).
+const OPEN_CLASSROOM_COOLDOWN_MS = 15 * 60 * 1000;
 
-function enableSidePanelOnIconClick() {
-  chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
-    .catch((err) => console.error("setPanelBehavior failed:", err));
+// ---------- Display ----------
+// "sidepanel": the icon opens the side panel. "popup": the icon opens a popup.
+// "tab": the icon opens the list in its own tab (handled in action.onClicked).
+
+async function applyDisplay() {
+  const { display } = await loadState();
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: display === "sidepanel" });
+    await chrome.action.setPopup({ popup: display === "popup" ? "panel.html?view=popup" : "" });
+  } catch (err) {
+    console.error("Couldn't apply the display setting:", err);
+  }
 }
+
+// Switches to the list's tab if one is open, or opens a new one.
+async function openListInTab() {
+  const pageUrl = chrome.runtime.getURL("panel.html");
+  const contexts = await chrome.runtime
+    .getContexts({ contextTypes: ["TAB"] })
+    .catch(() => []);
+  const open = contexts.find((c) => c.documentUrl?.startsWith(pageUrl) && c.tabId >= 0);
+  if (open) {
+    await chrome.tabs.update(open.tabId, { active: true });
+    if (open.windowId >= 0) await chrome.windows.update(open.windowId, { focused: true });
+    return;
+  }
+  await chrome.tabs.create({ url: "panel.html?view=page" });
+}
+
+chrome.action.onClicked.addListener(() => {
+  // Only fires when there's no popup and the side panel isn't set to open.
+  openListInTab().catch((err) => console.error("Couldn't open the list:", err));
+});
 
 // ---------- Reminders ----------
 // A check runs once a minute. It sends a reminder when a reminder time has passed
@@ -34,7 +66,7 @@ async function sendReminder(tasks, nowStr) {
 }
 
 async function checkReminders() {
-  const { tasks, devPretend, reminderTimes, lastReminderSlot } = await loadState();
+  const { devPretend, reminderTimes, lastReminderSlot } = await loadState();
   const nowStr = nowCentral(devPretend);
   const slot = latestReminderSlot(nowStr, reminderTimes);
 
@@ -46,8 +78,10 @@ async function checkReminders() {
   if (!slot || slot <= lastReminderSlot) return;
 
   await chrome.storage.local.set({ lastReminderSlot: slot });
-  // Step 3: run a Classroom refresh here, right before the reminder.
-  await sendReminder(tasks, nowStr);
+  // Read Classroom first so the counts are current. If it fails, remind anyway.
+  await refreshClassroom("reminder").catch((err) => console.error("Refresh before reminder failed:", err));
+  const fresh = await loadState();
+  await sendReminder(fresh.tasks, nowCentral(fresh.devPretend));
 }
 
 // Checks run one at a time, so two triggers close together can't both send.
@@ -66,44 +100,73 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CHECK_ALARM) queueCheck();
 });
 
-// Changing the pretend clock or reminder times is noticed right away.
+// Changing the pretend clock or reminder times is noticed right away,
+// and changing the Display setting applies right away.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && (changes.devPretend || changes.reminderTimes)) queueCheck();
+  if (area !== "local") return;
+  if (changes.devPretend || changes.reminderTimes) queueCheck();
+  if (changes.display) applyDisplay();
 });
+
+// ---------- Refresh when you open Classroom ----------
+
+chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status !== "complete" || isRefreshTab(tabId) || isRefreshing()) return;
+  if (!tab.url?.startsWith("https://classroom.google.com/")) return;
+  const { refreshState } = await chrome.storage.local.get("refreshState");
+  // After a failed read (say, you weren't signed in), opening Classroom retries right away.
+  const recent = refreshState?.ok && Date.now() - refreshState.finishedAtMs < OPEN_CLASSROOM_COOLDOWN_MS;
+  if (recent) return;
+  refreshClassroom("opened Classroom").catch((err) => console.error("Refresh failed:", err));
+});
+
+// ---------- Notification click ----------
 
 // The window the side panel opens in. Kept up to date so a notification click can
 // open the panel right away: sidePanel.open() only works while the click still counts
 // as a user action, so it can't wait on an async lookup first.
 let lastWindowId = null;
+let display = "sidepanel"; // kept in step with storage for the same reason
 chrome.windows.getLastFocused().then((w) => { if (lastWindowId === null) lastWindowId = w?.id ?? null; }).catch(() => {});
 chrome.windows.onFocusChanged.addListener((id) => {
   if (id !== chrome.windows.WINDOW_ID_NONE) lastWindowId = id;
 });
+loadState().then((s) => (display = s.display)).catch(() => {});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.display) display = changes.display.newValue || "sidepanel";
+});
 
-function openListInTab() {
-  chrome.tabs.create({ url: chrome.runtime.getURL("panel.html") });
+function openListFallback() {
+  openListInTab().catch((err) => console.error("Couldn't open the list:", err));
 }
 
-// Clicking the reminder opens the side panel. If Chrome refuses, the list opens in a tab.
+// Clicking the reminder opens the list the way the Display setting says.
+// If Chrome refuses, the list opens in a tab.
 chrome.notifications.onClicked.addListener((id) => {
   if (id !== NOTIFICATION_ID) return;
   chrome.notifications.clear(id);
-  if (lastWindowId === null) {
-    openListInTab();
+  if (display === "tab" || lastWindowId === null) {
+    openListFallback();
     return;
   }
   const windowId = lastWindowId;
-  chrome.sidePanel
-    .open({ windowId })
-    .then(() => chrome.windows.update(windowId, { focused: true }))
-    .catch((err) => {
-      console.warn("Side panel didn't open from the notification:", err);
-      openListInTab();
-    });
+  const opening =
+    display === "popup"
+      ? chrome.windows.update(windowId, { focused: true }).then(() => chrome.action.openPopup({ windowId }))
+      : chrome.sidePanel.open({ windowId }).then(() => chrome.windows.update(windowId, { focused: true }));
+  opening.catch((err) => {
+    console.warn("The list didn't open from the notification:", err);
+    openListFallback();
+  });
 });
 
-// "Send test reminder" in the developer tools.
+// ---------- Messages from the panel and settings page ----------
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg?.type === "refresh") {
+    refreshClassroom("refresh button").catch((err) => console.error("Refresh failed:", err));
+    reply({ started: true });
+    return;
+  }
   if (msg?.type !== "send-test-reminder") return;
   (async () => {
     try {
@@ -117,11 +180,15 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   return true; // reply comes later
 });
 
-chrome.runtime.onInstalled.addListener(() => {
-  enableSidePanelOnIconClick();
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  applyDisplay();
   startReminderChecks();
+  // Fill the list right away instead of waiting for the next reminder.
+  if (reason === "install") refreshClassroom("installed").catch((err) => console.error("Refresh failed:", err));
 });
 chrome.runtime.onStartup.addListener(() => {
-  enableSidePanelOnIconClick();
+  applyDisplay();
   startReminderChecks();
 });
+
+clearStaleRefresh();

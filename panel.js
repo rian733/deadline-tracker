@@ -1,5 +1,6 @@
-// Side panel: three views in one page (list, add, task).
+// The list: three views in one page (list, add, task).
 // Every view reads from chrome.storage.local and writes back to it.
+// The same page is the side panel, the popup (?view=popup), and the full page (?view=page).
 
 import {
   loadVisible,
@@ -15,9 +16,15 @@ import {
   datePart,
   timePart,
   makeId,
+  formatRefreshTime,
 } from "./lib.js";
+import { applyLook } from "./look.js";
 
 const app = document.getElementById("app");
+
+const mode = new URLSearchParams(location.search).get("view");
+if (mode === "popup" || mode === "page") document.documentElement.classList.add(`view-${mode}`);
+applyLook();
 
 // To show the Google Classroom logo on the task page, put Google's official logo
 // image in this folder (for example assets/classroom-logo.png) and set this to
@@ -51,6 +58,7 @@ function go(next) {
 // ---------- Rendering ----------
 async function render() {
   const { tasks, nowStr } = await loadVisible();
+  const { refreshState = null } = await chrome.storage.local.get("refreshState");
   app.replaceChildren();
   if (view.name === "add") return renderAdd(tasks);
   if (view.name === "task") {
@@ -58,15 +66,41 @@ async function render() {
     if (task) return renderTask(task, tasks, nowStr);
     view = { name: "list" }; // task was deleted or expired
   }
-  renderList(tasks, nowStr);
+  renderList(tasks, nowStr, refreshState);
 }
 
-function renderList(tasks, nowStr) {
+function renderList(tasks, nowStr, refreshState) {
+  const refreshing = Boolean(refreshState?.running);
   app.append(
     h(
       "div",
       { class: "header" },
       h("h1", {}, "Deadlines"),
+      h(
+        "button",
+        {
+          class: `icon-btn${refreshing ? " spinning" : ""}`,
+          title: refreshing ? "Reading Classroom..." : "Re-read Classroom now",
+          "aria-label": refreshing ? "Reading Classroom" : "Re-read Classroom now",
+          disabled: refreshing,
+          onclick: () => {
+            chrome.runtime.sendMessage({ type: "refresh" }).catch((err) => {
+              console.error("Couldn't start a refresh:", err);
+            });
+          },
+        },
+        h("span", {}, "↻")
+      ),
+      h(
+        "button",
+        {
+          class: "icon-btn",
+          title: "Settings",
+          "aria-label": "Settings",
+          onclick: () => chrome.runtime.openOptionsPage(),
+        },
+        "⚙"
+      ),
       h(
         "button",
         {
@@ -79,6 +113,9 @@ function renderList(tasks, nowStr) {
       )
     )
   );
+
+  app.append(refreshStatus(refreshState));
+  if (refreshState?.signedOut && !refreshing) app.append(signInBanner());
 
   const shown = sortTasks(visibleTasks(tasks, nowStr), nowStr);
   if (shown.length === 0) {
@@ -108,6 +145,33 @@ function renderList(tasks, nowStr) {
           task.notOnClassroom ? h("div", { class: "task-note" }, "Not on Classroom") : null
         );
       })
+    )
+  );
+}
+
+// One line under the header saying when Classroom was last read.
+function refreshStatus(state) {
+  let text;
+  if (!state) text = "Not read from Classroom yet. Press ↻ to read it now.";
+  else if (state.running) text = "Reading Classroom...";
+  else if (state.ok) text = `Updated from Classroom ${formatRefreshTime(state.finishedAt)}.`;
+  else if (state.signedOut) text = "Couldn't read Classroom.";
+  else text = `Couldn't read Classroom ${formatRefreshTime(state.finishedAt)}: ${state.error} Press ↻ to try again.`;
+  return h("div", { class: "refresh-status", role: "status" }, text);
+}
+
+function signInBanner() {
+  return h(
+    "div",
+    { class: "banner" },
+    h("div", {}, "Sign in to Google Classroom in this Chrome profile so your assignments can update."),
+    h(
+      "button",
+      {
+        class: "btn primary",
+        onclick: () => chrome.tabs.create({ url: "https://classroom.google.com/" }),
+      },
+      "Sign in to Classroom"
     )
   );
 }

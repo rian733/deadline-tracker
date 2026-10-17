@@ -17,6 +17,26 @@
   --radius: 10px;
 }
 
+/* Dark theme (step 4). Chosen in settings, not from the computer's setting. */
+:root[data-theme="dark"] {
+  --bg: #12161d;
+  --surface: #1c222b;
+  --text: #e6e9ef;
+  --muted: #9aa3b2;
+  --line: #343c48;
+  --accent: #5b8cff;
+  --accent-text: #0b1020;
+  --green: #4ade80;
+  --green-bg: #11291b;
+  --yellow: #facc15;
+  --yellow-bg: #2b2610;
+  --red: #f87171;
+  --red-bg: #321717;
+  --gray: #9ca3af;
+  --gray-bg: #232933;
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -35,6 +55,24 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* Popup (step 4): Chrome sizes the popup to the page, up to 800 x 600. */
+:root.view-popup body {
+  width: 380px;
+}
+:root.view-popup #app {
+  min-height: 0;
+  max-height: 580px;
+  overflow-y: auto;
+}
+
+/* Full page in its own tab (step 4). */
+:root.view-page #app {
+  max-width: 640px;
+  margin: 0 auto;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
 }
 
 /* ---------- Header ---------- */
@@ -88,6 +126,42 @@ body {
 
 .icon-btn.danger {
   color: var(--red);
+}
+
+.icon-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.icon-btn.spinning span {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Refresh status (under the header) ---------- */
+.refresh-status {
+  padding: 6px 14px;
+  color: var(--muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.banner {
+  margin: 12px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--yellow);
+  border-radius: var(--radius);
+  background: var(--yellow-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
 }
 
 .icon-btn:focus-visible,

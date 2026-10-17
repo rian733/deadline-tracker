@@ -81,6 +81,14 @@ export function formatTime(dueStr) {
   return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
 }
 
+// When Classroom was last read: "at 7:02 AM" today, else "on Monday, October 12 at 7:02 AM".
+// Refresh times are real times, so this compares with the real clock, not the pretend one.
+export function formatRefreshTime(atStr, realNowStr = centralString(Date.now())) {
+  if (!atStr) return "";
+  const time = formatTime(atStr);
+  return datePart(atStr) === datePart(realNowStr) ? `at ${time}` : `on ${formatDate(atStr)} at ${time}`;
+}
+
 // ---------- Task status ----------
 // Returns { state, label, daysLeft }.
 // state: "green" | "yellow" | "red" | "gray"
@@ -163,7 +171,8 @@ export function buildTestTasks(nowStr) {
 }
 
 // ---------- Reminders ----------
-// Reminder times are Central wall-clock "HH:mm". Step 4 makes them changeable.
+// Reminder times are Central wall-clock "HH:mm": one morning and one night time,
+// changeable in settings.
 export const DEFAULT_REMINDER_TIMES = ["07:00", "19:00"];
 
 // The most recent reminder time at or before `nowStr`, as "YYYY-MM-DDTHH:mm".
@@ -325,16 +334,114 @@ export function mergeClassroom(tasks, found, nowStr, { deletedIds = [], fullRead
   }
   if (fullRead) {
     for (const t of out) {
-      if (t.source === "classroom" && !seen.has(t.id)) t.notOnClassroom = true;
+      if (t.source === "classroom" && !t.id.startsWith("test-") && !seen.has(t.id)) {
+        t.notOnClassroom = true;
+      }
     }
   }
   return out;
 }
 
+// ---------- Classroom reader results (step 3) ----------
+// The reader (reader.js) returns raw text. These functions turn it into entries for
+// mergeClassroom. Classroom's words like "Today" follow the real clock, so text is
+// parsed with the real time (`realNowStr`), even while the pretend clock is on.
+
+// The three To-do tabs, read in this order. Done is last, so a turn-in wins.
+export const CLASSROOM_TABS = [
+  { kind: "assigned", name: "Assigned", url: "https://classroom.google.com/a/not-turned-in/all" },
+  { kind: "missing", name: "Missing", url: "https://classroom.google.com/a/missing/all" },
+  { kind: "done", name: "Done", url: "https://classroom.google.com/a/turned-in/all" },
+];
+
+// A row's due date from its extra lines, skipping "Posted ..." lines. Or null.
+export function rowListDate(row, realNowStr) {
+  for (const line of row.other || []) {
+    if (/^posted\b/i.test(line)) continue;
+    const parsed = parseListDate(line, realNowStr);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+// reads: [{ kind, groups: [{ id, count, rows }] }] from reader.readList(), one per tab.
+// Returns { entries, problems }. Each entry is
+//   { classroomId, title, className, url, turnedIn, listDate, kind, group }
+// where listDate is { date, time } (time may be null) or null.
+export function collectRows(reads, realNowStr) {
+  const byId = new Map();
+  const problems = [];
+  for (const read of reads) {
+    for (const group of read.groups || []) {
+      for (const row of group.rows) {
+        if (!row.id) {
+          problems.push(`${read.kind}: couldn't find the id of "${row.title}"`);
+          continue;
+        }
+        const turnedIn = read.kind === "done";
+        const listDate = turnedIn ? null : rowListDate(row, realNowStr);
+        if (!turnedIn && !listDate && group.id !== "NO_DUE_DATE") {
+          problems.push(`${read.kind}: couldn't read the date of "${row.title}" (${row.other.join(" | ")})`);
+        }
+        byId.set(row.id, {
+          classroomId: row.id,
+          title: row.title,
+          className: row.className,
+          url: row.url,
+          turnedIn,
+          listDate,
+          kind: read.kind,
+          group: group.id,
+        });
+      }
+    }
+  }
+  return { entries: [...byId.values()], problems };
+}
+
+// True when the list shows no time for this entry and the reader should open its
+// assignment page: it's new (and would be added), or its due date moved.
+export function needsDetails(entry, task, nowStr, deletedIds = []) {
+  if (entry.turnedIn || !entry.listDate || entry.listDate.time) return false;
+  if (!task) {
+    if (deletedIds.includes(`classroom-${entry.classroomId}`)) return false;
+    const oldest = datePart(msToStr(strToMs(nowStr) - MISSING_LOOKBACK_DAYS * DAY_MS));
+    return entry.listDate.date >= oldest;
+  }
+  if (task.edited?.includes("due")) return false;
+  return datePart(task.due) !== entry.listDate.date;
+}
+
+// The due date and time to give mergeClassroom, best source first: the time on the
+// list, the assignment page, the time already saved for that date, else 11:59 PM.
+export function resolveDue(entry, task, detailsDue) {
+  if (entry.turnedIn || !entry.listDate) return null;
+  const { date, time } = entry.listDate;
+  if (time) return `${date}T${time}`;
+  if (detailsDue) return detailsDue;
+  if (task && datePart(task.due) === date) return task.due;
+  return `${date}T23:59`;
+}
+
+// A read counts as full only when every tab loaded and every group showed all its rows.
+export function isFullRead(reads, problems) {
+  return (
+    reads.length === CLASSROOM_TABS.length &&
+    reads.every((r) => !r.error && r.complete) &&
+    problems.length === 0
+  );
+}
+
 // ---------- Storage (chrome.storage.local) ----------
 // Keys: tasks (array), devPretend ({ central, setAtMs } or null),
 // reminderTimes (array of "HH:mm"), lastReminderSlot (last reminder time handled),
-// deletedIds (ids of Classroom tasks you deleted, so a refresh doesn't add them back).
+// deletedIds (ids of Classroom tasks you deleted, so a refresh doesn't add them back),
+// display ("sidepanel" | "tab" | "popup"), theme ("light" | "dark", or null until the
+// first page opens), scale (50 to 200, in percent),
+// refreshState (the last Classroom refresh, see refresh.js), readerLog (what it read).
+
+export const DISPLAYS = ["sidepanel", "tab", "popup"];
+export const SCALES = [50, 75, 100, 125, 150, 175, 200];
 
 export async function loadState() {
   const {
@@ -343,14 +450,20 @@ export async function loadState() {
     reminderTimes = DEFAULT_REMINDER_TIMES,
     lastReminderSlot = null,
     deletedIds = [],
+    display = "sidepanel",
+    theme = null,
+    scale = 100,
   } = await chrome.storage.local.get([
     "tasks",
     "devPretend",
     "reminderTimes",
     "lastReminderSlot",
     "deletedIds",
+    "display",
+    "theme",
+    "scale",
   ]);
-  return { tasks, devPretend, reminderTimes, lastReminderSlot, deletedIds };
+  return { tasks, devPretend, reminderTimes, lastReminderSlot, deletedIds, display, theme, scale };
 }
 
 // Deletes a task. A Classroom task's id is remembered so a refresh doesn't add it back.

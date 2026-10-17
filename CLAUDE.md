@@ -21,9 +21,12 @@ There is no build step, bundler, linter, or package.json. Files load directly as
 Every input writes to one shared task list in storage, and every display only reads from it. Adding a site means adding a reader and nothing else.
 
 - `lib.js`: all shared logic. Pure functions come first (Node-testable), and the `chrome.storage` helpers (`loadState`, `saveTasks`, `deleteTask`, `loadVisible`) come last. Every other file imports from it.
-- `background.js`: the service worker (`"type": "module"`). It makes the icon open the side panel, runs the reminder checks, handles notification clicks, and answers messages from the Options page. The Classroom refresh goes in `checkReminders`, right before the reminder is sent (marked with a comment).
-- `panel.js`: the list, add, and task views in one page. A small `h()` helper builds the DOM, and `go()` switches views and re-renders from storage.
-- `options.js`: the settings page. For now it only has the developer testing tools: pretend clock, test tasks, send test reminder, and reset.
+- `background.js`: the service worker (`"type": "module"`). It applies the Display setting (side panel, popup, or tab), runs the reminder checks, handles notification clicks, answers messages (`refresh`, `send-test-reminder`), and starts Classroom refreshes: on install, before each reminder (in `checkReminders`), when a Classroom tab loads (15-minute cooldown after a successful read), and from the panel's ↻ button.
+- `refresh.js`: one Classroom refresh. Opens a background tab, reads the Assigned, Missing, and Done lists (`CLASSROOM_TABS`), opens new assignments' pages for due times, merges with `mergeClassroom`, closes the tab. Saves `refreshState` (shown in the panel) and `readerLog` (shown in the developer tools). Only one runs at a time.
+- `reader.js`: a classic script (no imports) injected with `chrome.scripting`, and also loaded by `options.html` to read the saved pages. It only collects raw text (`readList`, `readDetails`, plus `...Now` versions that take a document). All parsing happens in `lib.js` (`collectRows`, `needsDetails`, `resolveDue`, `isFullRead`) so it can be tested.
+- `look.js`: applies theme and scale to the panel and settings pages.
+- `panel.js`: the list, add, and task views in one page, used as the side panel, the popup (`?view=popup`), and the full page (`?view=page`). A small `h()` helper builds the DOM, and `go()` switches views and re-renders from storage.
+- `options.js`: the settings page (display, theme, scale, reminder times) with the developer tools in a collapsed section: pretend clock, test tasks, send test reminder, reader log, run the reader on saved pages, and reset.
 
 ### Time model (important)
 - All times are **Central wall-clock strings** `"YYYY-MM-DDTHH:mm"` with no zone suffix. They sort correctly as plain strings, and comparisons use `<` and `>=` directly. `strToMs` and `msToStr` treat them as UTC only for date arithmetic.
@@ -43,4 +46,7 @@ Every input writes to one shared task list in storage, and every display only re
 
 ## Conventions
 - Classroom shows dates as text with no year ("Monday, Oct 19", "Due Yesterday, 2:55 AM"). Parse them only with `parseListDate` / `parseDueLine` in `lib.js`, which pick the year closest to today.
+- Classroom's own words ("Today") follow the real clock, so reader text is parsed with the real time, never the pretend clock. The merge and the 14-day rule use the pretend clock.
+- The reader must only read elements that aren't inside `[aria-hidden="true"]`, because Classroom keeps earlier-viewed pages in the DOM, hidden.
+- To check the reader without Chrome, load the saved pages in jsdom from a scratch directory (not added to this repo, which has no package.json).
 - `test-pages/` holds saved copies of Rian's Classroom pages for testing the reader. It is gitignored because it contains personal data. Never commit it.

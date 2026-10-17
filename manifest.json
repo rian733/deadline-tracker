@@ -1,9 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Deadline Tracker",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "Collects assignment due dates into one color-coded list. All data stays on your computer.",
-  "permissions": ["storage", "sidePanel", "alarms", "notifications"],
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "alarms",
+    "notifications",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://classroom.google.com/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

@@ -20,11 +20,30 @@
         margin: 0;
         font-size: 22px;
       }
+      section,
       details {
         border: 1px solid var(--line);
         border-radius: var(--radius);
         background: var(--surface);
         padding: 12px 14px;
+      }
+      section h2 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      fieldset {
+        border: 0;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .choice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
       }
       summary {
         cursor: pointer;
@@ -48,13 +67,18 @@
         gap: 8px;
         align-items: center;
       }
-      .row input {
+      .row input,
+      .row select {
         padding: 8px 10px;
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--surface);
         color: var(--text);
         font: inherit;
+      }
+      .row label {
+        font-weight: 600;
+        min-width: 70px;
       }
       .btn.danger {
         color: var(--red);
@@ -65,15 +89,73 @@
         font-weight: 600;
         color: var(--green);
       }
+      .log {
+        font-size: 13px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .log table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      .log th,
+      .log td {
+        text-align: left;
+        vertical-align: top;
+        padding: 4px 6px;
+        border-bottom: 1px solid var(--line);
+      }
+      .log .problem {
+        color: var(--red);
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>Settings</h1>
-      <p class="hint">
-        Display, theme, scale, and reminder times arrive in step 4. For now this page holds
-        only the developer tools.
-      </p>
+
+      <section>
+        <h2>Display</h2>
+        <p class="hint">What the toolbar icon opens.</p>
+        <fieldset id="display">
+          <label class="choice"><input type="radio" name="display" value="sidepanel" /> Side panel, docked beside any site</label>
+          <label class="choice"><input type="radio" name="display" value="tab" /> Full page in its own tab</label>
+          <label class="choice"><input type="radio" name="display" value="popup" /> Popup under the icon</label>
+        </fieldset>
+      </section>
+
+      <section>
+        <h2>Theme</h2>
+        <fieldset id="theme">
+          <label class="choice"><input type="radio" name="theme" value="light" /> Light</label>
+          <label class="choice"><input type="radio" name="theme" value="dark" /> Dark</label>
+        </fieldset>
+      </section>
+
+      <section>
+        <h2>Scale</h2>
+        <div class="row">
+          <label for="scale">Size</label>
+          <select id="scale"></select>
+        </div>
+      </section>
+
+      <section>
+        <h2>Reminder times</h2>
+        <p class="hint">One summary notification at each time (Central time).</p>
+        <div class="row">
+          <label for="morning">Morning</label>
+          <input id="morning" type="time" />
+        </div>
+        <div class="row">
+          <label for="night">Night</label>
+          <input id="night" type="time" />
+        </div>
+        <div id="times-error" class="error" role="alert"></div>
+      </section>
+
+      <div id="message" role="status"></div>
 
       <details>
         <summary>Developer tools</summary>
@@ -107,12 +189,31 @@
         <div class="tool">
           <h2>Send test reminder</h2>
           <p class="hint">
-            Sends the reminder right now. Like a real reminder, nothing is sent when no task
-            is yellow or red.
+            Sends the reminder right now, without reading Classroom first. Like a real
+            reminder, nothing is sent when no task is yellow or red.
           </p>
           <div class="row">
             <button id="test-reminder" class="btn">Send test reminder</button>
           </div>
+        </div>
+
+        <div class="tool">
+          <h2>Reader log</h2>
+          <p class="hint">What the last Classroom refresh found, and anything it couldn't read.</p>
+          <div id="reader-log" class="log"></div>
+        </div>
+
+        <div class="tool">
+          <h2>Saved Classroom pages</h2>
+          <p class="hint">
+            Runs the reader on the pages saved in <code>test-pages/</code> (assigned.html,
+            missing.html, done.html, assignment.html). It reads them as saved, so groups
+            behind "View all" show as partial. Nothing is added to your list.
+          </p>
+          <div class="row">
+            <button id="saved-run" class="btn">Run reader on saved pages</button>
+          </div>
+          <div id="saved-log" class="log"></div>
         </div>
 
         <div class="tool">
@@ -123,9 +224,8 @@
           </div>
         </div>
       </details>
-
-      <div id="message" role="status"></div>
     </main>
+    <script src="reader.js"></script>
     <script type="module" src="options.js"></script>
   </body>
 </html>
