@@ -1,7 +1,8 @@
-# Deadline Tracker (steps 1–4)
+# Deadline Tracker
 
 Collects your Google Classroom due dates into one color-coded list, and sends a summary
-reminder each morning and night. All data stays on your computer.
+reminder each morning and night. Your list is stored on your computer; with Chrome sync on,
+your settings and your own changes also follow your Chrome account. Nothing goes to anyone else.
 
 ## Load it in Chrome
 1. Keep this folder somewhere permanent (Chrome reads it from there every time).
@@ -35,16 +36,24 @@ Click ⚙ in the list header (or right-click the icon and choose **Options**):
 - **Theme:** light or dark. It starts as Chrome's own appearance.
 - **Scale:** 50% to 200%.
 - **Reminder times:** a morning and a night time.
+- **Sync:** shows when your changes last synced with your other computers.
+
+## Sync across computers
+When Chrome sync is on, these follow your Chrome account: settings, tasks you added, your
+edits and check-offs, and deleted tasks. Assignments read from Classroom don't sync; each
+computer reads Classroom itself. Chrome sync holds about 100 KB, plenty for this. If
+sync is off (for example, turned off by a school), everything still works on one computer.
 
 ## Developer tools
-At the bottom of the settings page, open **Developer tools**:
+At the bottom of the settings page, open **Developer tools**. They only appear when the
+extension is loaded from this folder, never in a copy installed from the Web Store.
 - Pretend date and time (the clock keeps ticking forward from the time you set).
   Jumping it past a reminder time counts as a missed reminder, so one pops up right away.
 - Fill with test tasks (every state)
 - Send test reminder (sends it right now)
 - Reader log: what the last Classroom read found, and anything it couldn't read
 - Run reader on saved pages: reads the copies in `test-pages/` (not in git, since they hold personal data)
-- Reset everything
+- Reset everything (here and in sync)
 
 ## Files
 - `manifest.json`: names the extension and its permissions (storage, side panel, alarms,
@@ -54,6 +63,8 @@ At the bottom of the settings page, open **Developer tools**:
 - `reader.js`: runs inside Classroom's pages and collects the text of each assignment
 - `lib.js`: shared logic: Central-time dates, status colors, Classroom date parsing, merging, storage
 - `look.js`: applies the theme and scale
+- `sync.js`: syncs settings and your changes through Chrome sync
+- `timefield.js`: the typed time box used for every time field
 - `panel.html / panel.css / panel.js`: the list, add page, and task page
 - `options.html / options.js`: the settings page and developer tools
 - `tests/`: Node tests for the logic in `lib.js` (run `for t in tests/*.mjs; do node "$t"; done`)
@@ -61,6 +72,13 @@ At the bottom of the settings page, open **Developer tools**:
 ## Classroom logo
 The official Google Classroom logo isn't included. To show it on the task page, add Google's
 logo image to the folder and set `CLASSROOM_LOGO_FILE` at the top of `panel.js`.
+
+## Publishing to the Chrome Web Store
+1. Raise `"version"` in `manifest.json` for every new upload.
+2. Run `./build-store.sh`. It makes `dist/deadline-tracker-<version>.zip` with only the
+   files the extension runs on (never `test-pages/`, `tests/`, or notes).
+3. Upload the zip in the Chrome Web Store Developer Dashboard and fill in the listing from
+   `store-listing.md`. The privacy policy is `docs/privacy.html`, served by GitHub Pages.
 
 ## Reloading after changes
 On `chrome://extensions`, click the circular arrow on the Deadline Tracker card.

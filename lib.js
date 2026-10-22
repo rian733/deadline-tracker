@@ -81,6 +81,47 @@ export function formatTime(dueStr) {
   return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
 }
 
+// The typed time box (timefield.js). Takes what's in the box and returns:
+//   text:  the box tidied up, like "05", "05:3", or "05:30 PM"
+//   ghost: the faint part of "--:-- AM/PM" that hasn't been typed yet
+//   value: "HH:mm" (24-hour) once the time is complete, else ""
+// Typing a or p adds AM or PM. Hours 13-23 and 00 are 24-hour times and need neither.
+// A first hour digit of 3-9 (or one digit then ":") becomes "0X", and a first
+// minute digit of 6-9 becomes "0X". `deleting` is true for Backspace, so a
+// half-deleted "P" removes AM/PM instead of growing back.
+export function maskTypedTime(raw, deleting = false) {
+  const s = (raw || "").toUpperCase().trim();
+  let digits = s.replace(/\D/g, "");
+  if (/^[3-9]/.test(digits) || /^\d[^\d]/.test(s)) digits = "0" + digits;
+  while (digits.length >= 2 && Number(digits.slice(0, 2)) > 23) digits = digits[0] + digits.slice(2);
+  if (/^[6-9]$/.test(digits[2] || "")) digits = digits.slice(0, 2) + "0" + digits.slice(2);
+  digits = digits.slice(0, 4);
+
+  const hour = digits.length >= 2 ? Number(digits.slice(0, 2)) : null;
+  const twentyFour = hour !== null && (hour === 0 || hour > 12);
+  let letter = /([AP])M?$/.exec(s)?.[1] || null;
+  if (deleting && !/[AP]M$/.test(s)) letter = null;
+  if (digits.length < 4 || twentyFour) letter = null;
+
+  const text = digits.slice(0, 2) + (digits.length > 2 ? ":" + digits.slice(2) : "") + (letter ? ` ${letter}M` : "");
+  const used = digits.length <= 2 ? digits.length : digits.length + 1;
+  const ghost = letter ? "" : "--:--".slice(used) + (twentyFour ? "" : " AM/PM");
+
+  let value = "";
+  if (digits.length === 4 && (letter || twentyFour)) {
+    const h = twentyFour ? hour : (hour % 12) + (letter === "P" ? 12 : 0);
+    value = `${String(h).padStart(2, "0")}:${digits.slice(2)}`;
+  }
+  return { text, ghost, value };
+}
+
+// "HH:mm" -> how the typed time box shows it: "05:30 PM", or "" for none.
+export function typedTimeText(hhmm) {
+  if (!/^\d{2}:\d{2}$/.test(hhmm || "")) return "";
+  const h = Number(hhmm.slice(0, 2));
+  return `${String(h % 12 || 12).padStart(2, "0")}:${hhmm.slice(3)} ${h < 12 ? "AM" : "PM"}`;
+}
+
 // When Classroom was last read: "at 7:02 AM" today, else "on Monday, October 12 at 7:02 AM".
 // Refresh times are real times, so this compares with the real clock, not the pretend one.
 export function formatRefreshTime(atStr, realNowStr = centralString(Date.now())) {
@@ -432,13 +473,146 @@ export function isFullRead(reads, problems) {
   );
 }
 
+// ---------- Sync across computers (step 5) ----------
+// Chrome sync holds about 100 KB, so only your own changes sync: tasks you added,
+// Classroom tasks you edited or checked off, deleted tasks, and settings. Each
+// computer reads Classroom itself. sync.js does the storage work; these are the rules.
+//
+// Each synced task is a record { id, rec, updatedAt } where rec is the task's synced
+// fields, or null once it's gone (deleted, expired, or no longer yours). For each id
+// the newer record wins. Deleted ids are kept as a list that only grows.
+
+export const SYNC_SETTINGS = ["display", "theme", "scale", "reminderTimes"];
+export const SYNC_GONE_KEEP_MS = 30 * DAY_MS;
+
+// The part of a task that syncs, or null if the task doesn't sync.
+export function syncRecord(task) {
+  if (task.id.startsWith("test-")) return null;
+  const edited = task.edited || [];
+  if (task.source !== "manual" && !edited.length) return null;
+  return {
+    id: task.id,
+    title: task.title,
+    className: task.className,
+    due: task.due,
+    url: task.url || "",
+    source: task.source,
+    done: task.done,
+    turnedInSeenAt: task.turnedInSeenAt ?? null,
+    edited: [...edited],
+  };
+}
+
+// Compares this computer's tasks with the last synced state (`meta`:
+// { id: { hash, updatedAt } }) and stamps what changed with `nowMs`.
+// Returns the new meta. A task that stopped syncing gets a "gone" entry.
+export function stampChanges(tasks, meta, nowMs) {
+  const out = { ...meta };
+  const live = new Set();
+  for (const task of tasks) {
+    const rec = syncRecord(task);
+    if (!rec) continue;
+    live.add(task.id);
+    const hash = JSON.stringify(rec);
+    if (out[task.id]?.hash !== hash) out[task.id] = { hash, updatedAt: later(out[task.id], nowMs) };
+  }
+  for (const id of Object.keys(out)) {
+    if (!live.has(id) && out[id].hash !== null) out[id] = { hash: null, updatedAt: later(out[id], nowMs) };
+  }
+  return out;
+}
+
+// A change must be stamped later than the version it replaces, even if the clocks
+// of two computers differ a little.
+function later(old, nowMs) {
+  return Math.max(nowMs, (old?.updatedAt ?? 0) + 1);
+}
+
+// Merges two lists of records ({ id, rec, updatedAt }); the newer one wins.
+// Gone records older than SYNC_GONE_KEEP_MS are dropped.
+export function mergeRecords(a, b, nowMs) {
+  const byId = new Map();
+  for (const r of [...a, ...b]) {
+    const have = byId.get(r.id);
+    if (!have || r.updatedAt > have.updatedAt) byId.set(r.id, r);
+  }
+  return [...byId.values()]
+    .filter((r) => r.rec || nowMs - r.updatedAt < SYNC_GONE_KEEP_MS)
+    .sort((x, y) => (x.id < y.id ? -1 : 1));
+}
+
+// Applies synced records that are newer than this computer's (`meta`) to its tasks,
+// and removes tasks whose ids are in `deletedIds`. Returns { tasks, meta }.
+// - A task added on another computer is added here.
+// - For a Classroom task, only the fields you edited are copied, since each computer
+//   reads the rest from Classroom.
+// - A gone record removes a task you added; a Classroom task is left to this computer's
+//   own refresh (deleting one also adds its id to deletedIds).
+export function applyRecords(tasks, records, meta, deletedIds) {
+  const out = tasks.map((t) => ({ ...t, edited: [...(t.edited || [])] }));
+  const byId = new Map(out.map((t) => [t.id, t]));
+  const newMeta = { ...meta };
+  for (const { id, rec, updatedAt } of records) {
+    if (newMeta[id] && newMeta[id].updatedAt >= updatedAt) continue;
+    const task = byId.get(id);
+    if (!rec) {
+      if (task?.source === "manual") {
+        out.splice(out.indexOf(task), 1);
+        byId.delete(id);
+      }
+      newMeta[id] = { hash: null, updatedAt };
+      continue;
+    }
+    if (!task) {
+      const fresh = { ...rec, edited: [...rec.edited], notOnClassroom: false };
+      out.push(fresh);
+      byId.set(id, fresh);
+    } else if (rec.source === "manual") {
+      Object.assign(task, rec, { edited: [...rec.edited] });
+    } else {
+      for (const field of rec.edited) {
+        if (field === "done") {
+          task.done = rec.done;
+          task.turnedInSeenAt = rec.turnedInSeenAt;
+        } else {
+          task[field] = rec[field];
+        }
+        if (!task.edited.includes(field)) task.edited.push(field);
+      }
+    }
+    const now = byId.get(id);
+    newMeta[id] = { hash: JSON.stringify(syncRecord(now)), updatedAt };
+  }
+  const deleted = new Set(deletedIds);
+  return { tasks: out.filter((t) => !deleted.has(t.id)), meta: newMeta };
+}
+
+// Splits a list into pieces whose JSON stays under `maxChars`, since Chrome sync
+// limits each stored item to 8 KB.
+export function chunkList(list, maxChars = 6000) {
+  const chunks = [[]];
+  let size = 2;
+  for (const item of list) {
+    const len = JSON.stringify(item).length + 1;
+    if (size + len > maxChars && chunks[chunks.length - 1].length) {
+      chunks.push([]);
+      size = 2;
+    }
+    chunks[chunks.length - 1].push(item);
+    size += len;
+  }
+  return chunks;
+}
+
 // ---------- Storage (chrome.storage.local) ----------
 // Keys: tasks (array), devPretend ({ central, setAtMs } or null),
 // reminderTimes (array of "HH:mm"), lastReminderSlot (last reminder time handled),
 // deletedIds (ids of Classroom tasks you deleted, so a refresh doesn't add them back),
 // display ("sidepanel" | "tab" | "popup"), theme ("light" | "dark", or null until the
 // first page opens), scale (50 to 200, in percent),
-// refreshState (the last Classroom refresh, see refresh.js), readerLog (what it read).
+// refreshState (the last Classroom refresh, see refresh.js), readerLog (what it read),
+// syncMeta ({ id: { hash, updatedAt } }, what this computer last synced, see sync.js),
+// syncState ({ ok, error, at }, the last sync).
 
 export const DISPLAYS = ["sidepanel", "tab", "popup"];
 export const SCALES = [50, 75, 100, 125, 150, 175, 200];

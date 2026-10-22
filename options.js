@@ -17,13 +17,21 @@ import {
   SCALES,
 } from "./lib.js";
 import { applyLook } from "./look.js";
+import { timeField } from "./timefield.js";
 
 applyLook();
 
 const message = document.getElementById("message");
 const pretendDate = document.getElementById("pretend-date");
-const pretendTime = document.getElementById("pretend-time");
+const pretendTime = mountTime("pretend-time", "pretend-typed");
 const pretendStatus = document.getElementById("pretend-status");
+
+// Puts an hour-and-minute picker where the page has an empty placeholder.
+function mountTime(placeholderId, inputId) {
+  const field = timeField(inputId);
+  document.getElementById(placeholderId).replaceWith(field);
+  return field;
+}
 
 function say(text) {
   message.textContent = text;
@@ -38,8 +46,8 @@ for (const s of SCALES) {
   option.textContent = `${s}%`;
   scaleSelect.append(option);
 }
-const morning = document.getElementById("morning");
-const night = document.getElementById("night");
+const morning = mountTime("morning", "morning-time");
+const night = mountTime("night", "night-time");
 const timesError = document.getElementById("times-error");
 
 async function showSettings() {
@@ -89,7 +97,23 @@ async function saveTimes() {
 morning.addEventListener("change", saveTimes);
 night.addEventListener("change", saveTimes);
 
+// ---------- Sync status ----------
+
+const syncStatus = document.getElementById("sync-status");
+async function showSyncStatus() {
+  const { syncState = null } = await chrome.storage.local.get("syncState");
+  if (!syncState) syncStatus.textContent = "Not synced yet.";
+  else if (syncState.ok) syncStatus.textContent = `Last synced ${formatRefreshTime(centralString(syncState.at))}.`;
+  else syncStatus.textContent = `Sync failed: ${syncState.error}`;
+}
+
 // ---------- Developer tools ----------
+// Shown only when loaded unpacked (developer mode). Chrome adds update_url to the
+// manifest of a copy installed from the Web Store, so store users never see them.
+if (!("update_url" in chrome.runtime.getManifest())) {
+  document.getElementById("dev-tools").hidden = false;
+}
+
 
 async function showPretendStatus() {
   const { devPretend } = await loadState();
@@ -139,7 +163,9 @@ document.getElementById("test-reminder").addEventListener("click", async () => {
 });
 
 document.getElementById("reset").addEventListener("click", async () => {
-  if (!confirm("Clear all tasks and settings? This can't be undone.")) return;
+  if (!confirm("Clear all tasks and settings, here and in sync? This can't be undone.")) return;
+  // Sync first, so the cleared computer doesn't get the old data synced back.
+  await chrome.storage.sync.clear().catch(() => {});
   await chrome.storage.local.clear();
   say("Everything was cleared.");
   showPretendStatus();
@@ -277,8 +303,11 @@ document.getElementById("saved-run").addEventListener("click", async () => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.readerLog) showReaderLog();
+showSyncStatus();
+  if (area === "local" && changes.syncState) showSyncStatus();
 });
 
 showSettings();
 showPretendStatus();
 showReaderLog();
+showSyncStatus();

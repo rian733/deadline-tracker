@@ -145,19 +145,29 @@
         <h2>Reminder times</h2>
         <p class="hint">One summary notification at each time (Central time).</p>
         <div class="row">
-          <label for="morning">Morning</label>
-          <input id="morning" type="time" />
+          <label for="morning-time">Morning</label>
+          <span id="morning"></span>
         </div>
         <div class="row">
-          <label for="night">Night</label>
-          <input id="night" type="time" />
+          <label for="night-time">Night</label>
+          <span id="night"></span>
         </div>
         <div id="times-error" class="error" role="alert"></div>
       </section>
 
+      <section>
+        <h2>Sync</h2>
+        <p class="hint">
+          Settings, tasks you added, your edits and check-offs, and deleted tasks follow your
+          Chrome account to your other computers, when Chrome sync is on. Each computer reads
+          Classroom itself.
+        </p>
+        <div id="sync-status" class="hint"></div>
+      </section>
+
       <div id="message" role="status"></div>
 
-      <details>
+      <details id="dev-tools" hidden>
         <summary>Developer tools</summary>
 
         <div class="tool">
@@ -168,7 +178,7 @@
           </p>
           <div class="row">
             <input id="pretend-date" type="date" />
-            <input id="pretend-time" type="time" />
+            <span id="pretend-time"></span>
             <button id="pretend-set" class="btn">Set</button>
             <button id="pretend-clear" class="btn">Use real time</button>
           </div>

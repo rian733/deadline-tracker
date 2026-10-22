@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Deadline Tracker",
-  "version": "0.4.0",
-  "description": "Collects assignment due dates into one color-coded list. All data stays on your computer.",
+  "version": "0.5.0",
+  "description": "Collects your Google Classroom due dates into one color-coded list, with a reminder each morning and night.",
+  "homepage_url": "https://github.com/rian733/deadline-tracker",
   "permissions": [
     "storage",
     "sidePanel",

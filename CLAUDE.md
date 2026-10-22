@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project
-A Manifest V3 Chrome extension that collects assignment due dates (Google Classroom first) into one color-coded list and sends a summary notification each morning and night. All data stays in `chrome.storage.local`; nothing is sent anywhere.
+A Manifest V3 Chrome extension that collects assignment due dates (Google Classroom first) into one color-coded list and sends a summary notification each morning and night. All data lives in `chrome.storage.local`. With Chrome sync on, settings and the user's own changes also go to `chrome.storage.sync` (`sync.js`); nothing is sent anywhere else.
 
 - **Plan doc = source of truth:** [Deadline tracker extension plan](https://claude.ai/artifact/KMMCoTjHZGSLbPMsZNYyWJ), a Claude Doc. Read it with the docs tools (`read` with `payload: {"kind":"view"}`), never a web fetch. Follow its build order (1 skeleton/manual add · 2 reminders · 3 Classroom reader · 4 settings and displays · 5 later). When the doc doesn't settle something, ask Rian instead of guessing, and record new decisions in the doc after asking.
 - `HANDOFF.md` (untracked) holds the current state and next steps between sessions.
@@ -25,6 +25,8 @@ Every input writes to one shared task list in storage, and every display only re
 - `refresh.js`: one Classroom refresh. Opens a background tab, reads the Assigned, Missing, and Done lists (`CLASSROOM_TABS`), opens new assignments' pages for due times, merges with `mergeClassroom`, closes the tab. Saves `refreshState` (shown in the panel) and `readerLog` (shown in the developer tools). Only one runs at a time.
 - `reader.js`: a classic script (no imports) injected with `chrome.scripting`, and also loaded by `options.html` to read the saved pages. It only collects raw text (`readList`, `readDetails`, plus `...Now` versions that take a document). All parsing happens in `lib.js` (`collectRows`, `needsDetails`, `resolveDue`, `isFullRead`) so it can be tested.
 - `look.js`: applies theme and scale to the panel and settings pages.
+- `sync.js`: step 5 sync. Every page uses only `chrome.storage.local`; this mirrors settings (`SYNC_SETTINGS`) and "user records" (manual tasks, Classroom tasks with edits, `deletedIds`) to `chrome.storage.sync`, split into 8 KB pieces (`tasks.N`, `deleted.N`). Per-task newest-wins with timestamps kept in local `syncMeta`; the rules (`syncRecord`, `stampChanges`, `mergeRecords`, `applyRecords`) are pure functions in `lib.js`. Classroom-read data never syncs; each computer reads Classroom itself.
+- `timefield.js`: `timeField()`, a typed text box with a faint `--:-- AM/PM` template that stays visible behind what's typed (rules in `maskTypedTime` in `lib.js`), used for every time field instead of `<input type="time">`, whose seconds part could appear blank and block saving. Its `.value` is `"HH:mm"` like a time input.
 - `panel.js`: the list, add, and task views in one page, used as the side panel, the popup (`?view=popup`), and the full page (`?view=page`). A small `h()` helper builds the DOM, and `go()` switches views and re-renders from storage.
 - `options.js`: the settings page (display, theme, scale, reminder times) with the developer tools in a collapsed section: pretend clock, test tasks, send test reminder, reader log, run the reader on saved pages, and reset.
 
@@ -50,3 +52,6 @@ Every input writes to one shared task list in storage, and every display only re
 - The reader must only read elements that aren't inside `[aria-hidden="true"]`, because Classroom keeps earlier-viewed pages in the DOM, hidden.
 - To check the reader without Chrome, load the saved pages in jsdom from a scratch directory (not added to this repo, which has no package.json).
 - `test-pages/` holds saved copies of Rian's Classroom pages for testing the reader. It is gitignored because it contains personal data. Never commit it.
+- The developer tools section in settings shows only when loaded unpacked (no `update_url` in the manifest). The plan doc requires them hidden in the store version.
+- Store uploads are made with `./build-store.sh`, which zips an explicit file list. Add any new runtime file to that list. `docs/privacy.html` is the privacy policy (GitHub Pages); `store-listing.md` is the listing text.
+- The Classroom API is deferred (Rian, Oct 21); the page reader stays the only Classroom input.

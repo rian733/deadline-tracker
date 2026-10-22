@@ -19,6 +19,7 @@ import {
   formatRefreshTime,
 } from "./lib.js";
 import { applyLook } from "./look.js";
+import { timeField } from "./timefield.js";
 
 const app = document.getElementById("app");
 
@@ -219,7 +220,7 @@ function renderAdd(tasks) {
     list: "class-options",
   });
   const date = h("input", { id: "f-date", type: "date", required: true });
-  const time = h("input", { id: "f-time", type: "time", required: true });
+  const time = timeField("f-time");
   const error = h("div", { class: "error", role: "alert" });
 
   const form = h(
@@ -323,7 +324,8 @@ function renderTask(task, tasks, nowStr) {
     list: "class-options",
   });
   const date = h("input", { id: "t-date", type: "date", value: datePart(task.due) });
-  const time = h("input", { id: "t-time", type: "time", value: timePart(task.due) });
+  const time = timeField("t-time");
+  time.value = timePart(task.due);
 
   title.addEventListener("change", () => {
     const v = title.value.trim();

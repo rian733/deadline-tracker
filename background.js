@@ -1,10 +1,12 @@
 // Background script (service worker).
 // Opens the list the way the Display setting says, sends the reminders (step 2),
 // and runs the Classroom refresh (step 3): before each reminder, when you open
-// Classroom, and when you press the refresh button.
+// Classroom, and when you press the refresh button. It also syncs your changes
+// with your other computers (step 5, sync.js).
 
 import { loadState, nowCentral, latestReminderSlot, reminderMessage } from "./lib.js";
 import { refreshClassroom, isRefreshTab, isRefreshing, clearStaleRefresh } from "./refresh.js";
+import { startSync } from "./sync.js";
 
 const CHECK_ALARM = "reminder-check";
 const NOTIFICATION_ID = "reminder";
@@ -192,3 +194,4 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 clearStaleRefresh();
+startSync();

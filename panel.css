@@ -305,6 +305,50 @@ input:focus-visible {
   font: inherit;
 }
 
+/* Typed time box: the faint "--:-- AM/PM" sits behind a see-through text box.
+   Both use the same font, padding, and border width so the letters line up. */
+.time-field {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  max-width: 11em;
+  background: var(--surface);
+  border-radius: 8px;
+}
+
+.time-field input.time-typed {
+  position: relative;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-field input.time-typed[aria-invalid] {
+  border-color: var(--red);
+}
+
+.time-ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 11px;
+  white-space: pre;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.time-ghost-typed {
+  visibility: hidden;
+}
+
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -392,4 +436,10 @@ input:focus-visible {
 .hint {
   color: var(--muted);
   font-size: 13px;
+}
+
+/* Typed time box inside a settings row. */
+.row .time-field {
+  width: 11em;
+  flex: none;
 }
